@@ -1,6 +1,30 @@
-#include <stdio.h>
-#include <wctype.h>
+/* 
+	This "library" is "STB style" (see https://github.com/nothings/stb)
+	Short version: the header includes both the declarations and the implementation.	
+	The implementation is compiled out unless STRING_TRIM_IMPLEMENTATION is defined.
+	So to use this library, you need to define STRING_TRIM_IMPLEMENTATION in ONE .c file
+	before you include this header. 
+*/
+
+#ifndef STRING_TRIM_H
+#define STRING_TRIM_H
 #include <wchar.h>
+
+/*
+	Trim leading and trailing whitespace from (wide) character string, in-place.
+*/
+
+void
+wstr_trim_inplace(wchar_t * str);
+
+void
+str_trim_inplace(char * str);
+
+#endif
+
+#ifdef STRING_TRIM_IMPLEMENTATION
+
+#include <wctype.h>
 #include <string.h>
 #include <ctype.h>
 #include <stdio.h>
@@ -34,6 +58,9 @@ str_trim_inplace(char * str)
 	memmove(str,&str[first],last-first+1);
 	str[last-first+1] = 0;
 }
+
+#endif
+#ifdef STRING_TRIM_SELF_TEST
 
 int main(void)
 {
@@ -89,3 +116,4 @@ int main(void)
 	}
 }
 
+#endif
