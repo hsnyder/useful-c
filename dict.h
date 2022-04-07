@@ -52,22 +52,56 @@ typedef unsigned char       uchar;
 typedef unsigned short      ushort;
 typedef unsigned long       ulong;
 typedef unsigned long long  ullong;
+
+typedef float*               floatptr;
+typedef double*              doubleptr;
+typedef short*               shortptr;
+typedef int*                 intptr;
+typedef long*                longptr;
+typedef unsigned*            uintptr;
+
+typedef float complex*       cfloatptr;
+typedef double complex*      cdoubleptr;
+typedef long double*         ldoubleptr;
+typedef signed char*         scharptr;
+typedef long long*           llongptr;
+typedef unsigned char*       ucharptr;
+typedef unsigned short*      ushortptr;
+typedef unsigned long*       ulongptr;
+typedef unsigned long long*  ullongptr;
+
+
 #define TYPELIST(X) \
-	X(T_FLOAT,    float,     flt,   "%g",    )              \
-	X(T_DOUBLE,   double,    dbl,   "%g",    )              \
-	X(T_LDOUBLE,  ldouble,   ldbl,  "%Lg",   )              \
-	X(T_CFLOAT,   cfloat,    cflt,  "%s",    repr_cfloat)   \
-	X(T_CDOUBLE,  cdouble,   cdbl,  "%s",    repr_cdouble)  \
-	X(T_SCHAR,    schar,     c,     "%hhi",  )              \
-	X(T_SHORT,    short,     s,     "%hi",   )              \
-	X(T_INT,      int,       i,     "%i",    )              \
-	X(T_LONG,     long,      l,     "%li",   )              \
-	X(T_LLONG,    llong,     ll,    "%lli",  )              \
-	X(T_UCHAR,    uchar,     uc,    "%hhu",  )              \
-	X(T_USHORT,   ushort,    us,    "%hu",   )              \
-	X(T_UINT,     unsigned,  ui,    "%u",    )              \
-	X(T_ULONG,    ulong,     ul,    "%lu",   )              \
-	X(T_ULLONG,   ullong,    ull,   "%llu",  )              \
+	X(T_FLOAT,       float,       flt,          "%g",    )              \
+	X(T_DOUBLE,      double,      dbl,          "%g",    )              \
+	X(T_LDOUBLE,     ldouble,     ldbl,         "%Lg",   )              \
+	X(T_CFLOAT,      cfloat,      cflt,         "%s",    repr_cfloat)   \
+	X(T_CDOUBLE,     cdouble,     cdbl,         "%s",    repr_cdouble)  \
+	X(T_SCHAR,       schar,       c,            "%hhi",  )              \
+	X(T_SHORT,       short,       s,            "%hi",   )              \
+	X(T_INT,         int,         i,            "%i",    )              \
+	X(T_LONG,        long,        l,            "%li",   )              \
+	X(T_LLONG,       llong,       ll,           "%lli",  )              \
+	X(T_UCHAR,       uchar,       uc,           "%hhu",  )              \
+	X(T_USHORT,      ushort,      us,           "%hu",   )              \
+	X(T_UINT,        unsigned,    ui,           "%u",    )              \
+	X(T_ULONG,       ulong,       ul,           "%lu",   )              \
+	X(T_ULLONG,      ullong,      ull,          "%llu",  )              \
+	X(T_FLOATPTR,    floatptr,    mfloatptr,    "%p",    )              \
+	X(T_DOUBLEPTR,   doubleptr,   mdoubleptr,   "%p",    )              \
+	X(T_SHORTPTR,    shortptr,    mshortptr,    "%p",    )              \
+	X(T_INTPTR,      intptr,      mintptr,      "%p",    )              \
+	X(T_LONGPTR,     longptr,     mlongptr,     "%p",    )              \
+	X(T_UINTPTR,     uintptr,     muintptr,     "%p",    )              \
+	X(T_CFLOATPTR,   cfloatptr,   mcfloatptr,   "%p",    )              \
+	X(T_CDOUBLEPTR,  cdoubleptr,  mcdoubleptr,  "%p",    )              \
+	X(T_LDOUBLEPTR,  ldoubleptr,  mldoubleptr,  "%p",    )              \
+	X(T_SCHARPTR,    scharptr,    mscharptr,    "%p",    )              \
+	X(T_LLONGPTR,    llongptr,    mllongptr,    "%p",    )              \
+	X(T_UCHARPTR,    ucharptr,    mucharptr,    "%p",    )              \
+	X(T_USHORTPTR,   ushortptr,   mushortptr,   "%p",    )              \
+	X(T_ULONGPTR,    ulongptr,    mulongptr,    "%p",    )              \
+	X(T_ULLONGPTR,   ullongptr,   mullongptr,   "%p",    )              \
 	EXTRA_DICT_TYPES(X)
 
 /*
