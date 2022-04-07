@@ -1,17 +1,32 @@
 #pragma once
 #include <stdlib.h>
-#include <stdint.h>
 #include <complex.h>
 #include <stdbool.h>
-#include <stdio.h>
 
 #include "dict_config.h"
+
+
+/* 
+	Check adjustable parameters from dict_config.h
+*/
 #ifndef EXTRA_DICT_TYPES
 #define EXTRA_DICT_TYPES(X)
 #endif 
 
+#ifndef DICT_KEY_ERROR_CALLBACK
+#define DICT_KEY_ERROR_CALLBACK 0
+#endif
+
+#ifndef DICT_MAX_SHORTKEY 
+#define DICT_MAX_SHORTKEY 35
+#endif
+
+
+
+
 #ifdef DICT_SELF_TEST
 typedef struct exttyp {int x; int y;} exttyp;
+#include <stdio.h>
 static const char * 
 repr_exttyp(exttyp x) {
 	static char buf[128];
@@ -23,9 +38,8 @@ repr_exttyp(exttyp x) {
 	X(T_MYEXT,   exttyp ,     ext,   "%s", repr_exttyp   ) 
 #endif
 
-#ifndef MAX_SHORTKEY 
-#define MAX_SHORTKEY 35
-#endif
+
+
 
 #define CONCAT2(a,b) a ## b
 #define CONCAT(a,b) CONCAT2(a,b)
@@ -129,10 +143,10 @@ TYPELIST(X)
 /*
 	A single entry in our dictionary. 
 	Stores the key, along with the datatype indicator, plus the actual value.
-	The key is "small size optimized" meaning there's no memory allocation if it's smaller than MAX_SHORTKEY
+	The key is "small size optimized" meaning there's no memory allocation if it's smaller than DICT_MAX_SHORTKEY
 */
 struct dictentry {
-	char            key[MAX_SHORTKEY+1]; 
+	char            key[DICT_MAX_SHORTKEY+1]; 
 	enum dicttype     type;
 	char            *longkey;
 	union dictval     val;
@@ -278,19 +292,27 @@ void CONCAT(dict_set_,ctype)(int handle, const char * key, ctype x) \
 	        entry = dicts[handle].entries + dicts[handle].n_entries++; \
 	}                                              \
 	*entry = (struct dictentry) { .type = typesymbol, .val.varname = x }; \
-	if(strlen(key) > MAX_SHORTKEY) {                                     \
+	if(strlen(key) > DICT_MAX_SHORTKEY) {                                     \
 		entry->longkey = strdup(key);                                \
 	} else {                                                             \
-		memcpy(entry->key, key, MIN(MAX_SHORTKEY,strlen(key)));      \
+		memcpy(entry->key, key, MIN(DICT_MAX_SHORTKEY,strlen(key)));      \
 	}                                                                    \
 }
 TYPELIST(X)
 #undef X
 
+
+typedef void (*dict_key_error_callback)(const char * notfound_key, int dict_handle, const char * type_name);
+
+dict_key_error_callback keyerror_callback = DICT_KEY_ERROR_CALLBACK;
+
 #define X(typesymbol,ctype,varname,_a,_b)  \
 bool CONCAT(dict_get_,ctype)(int handle, const char * key, ctype * val) \
 {                                                      \
-	if (!handle_check(handle)) return false;       \
+	if (!handle_check(handle)) { \
+		if(keyerror_callback)keyerror_callback(key, handle, #typesymbol ); \
+		return false;       \
+	}                                 \
 	struct dictentry * entry = dict_lookup(handle,key);   \
 	if (entry && entry->type == typesymbol) {        \
 		*val = entry->val.varname;      \
