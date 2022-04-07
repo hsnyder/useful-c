@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <complex.h>
 #include <stdbool.h>
+#include <stdio.h>
 
 #include "dict_config.h"
 
@@ -26,7 +27,6 @@
 
 #ifdef DICT_SELF_TEST
 typedef struct exttyp {int x; int y;} exttyp;
-#include <stdio.h>
 static const char * 
 repr_exttyp(exttyp x) {
 	static char buf[128];
