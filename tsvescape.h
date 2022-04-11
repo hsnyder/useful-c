@@ -69,4 +69,5 @@ tsv_unescape_inplace(char * str)
 			}
 		}
 	}
+	*optr = 0;
 }
