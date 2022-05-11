@@ -23,8 +23,6 @@
 #endif
 
 
-
-
 #ifdef DICT_SELF_TEST
 typedef struct exttyp {int x; int y;} exttyp;
 static const char * 
@@ -108,6 +106,7 @@ typedef unsigned long long*  ullongptr;
 	<API>
 */
 
+
 int    mkdict (void);
 void   rmdict (int handle);
 void   dict_clear_key (int handle, const char * key);
@@ -127,6 +126,9 @@ TYPELIST(X)
 #undef X
 
 
+// returns the key at index i, or NULL if the dict or index doesn't exist;
+const char * dict_at(int handle, int i);
+
 /*
 	</API>
 */
@@ -143,7 +145,7 @@ static void DICT_TYPE_NOT_SUPPORTED(uselesstype x){(void)x;abort();}
 #define MACRO_GENERIC_DICT_SET(_a,ctype,_b,_c,_d) ctype: CONCAT(dict_set_,ctype), 
 #define dict_set(handle, key, val) _Generic((val), TYPELIST(MACRO_GENERIC_DICT_SET) uselesstype: DICT_TYPE_NOT_SUPPORTED)(handle, key,val)
 
-#define MACRO_GENERIC_DICT_GET(_a,ctype,_b,_c,_d) ctype: CONCAT(dict_get_,ctype), 
+#define MACRO_GENERIC_DICT_GET(_a,ctype,_b,_c,_d) ctype*: CONCAT(dict_get_,ctype), 
 #define dict_get(handle, key, val) _Generic((val), TYPELIST(MACRO_GENERIC_DICT_GET) uselesstype: DICT_TYPE_NOT_SUPPORTED)(handle, key, val)
 
 /*
@@ -403,6 +405,13 @@ bool CONCAT(dict_get_,ctype)(int handle, const char * key, ctype * val) \
 TYPELIST(X)
 #undef X
 
+const char * 
+dict_at(int handle, int i)
+{
+	if(!handle_check(handle)) return 0;
+	if(i >= dicts[handle].n_entries) return 0;
+	return dicts[handle].entries[i].key;
+}
 
 void dict_clear_key (int handle, const char * key)
 {
@@ -490,6 +499,10 @@ int main (void)
 	dict_set(d, "very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very long key thing", 19ULL);
 
 	dict_dump(d, stdout);
+
+	int x = 0;
+	dict_get(d, "int thing", &x);
+	printf("int thing: %i\n", x);
 
 	dict_clear_key(d, "int thing");
 	
