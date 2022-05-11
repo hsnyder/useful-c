@@ -249,14 +249,55 @@ bool handle_check(int handle)
 _Static_assert(sizeof *dicts[0].entries == sizeof (struct dictentry), "Sanity check failed: clearly I don't know how C works.");
 _Static_assert(sizeof dicts[0].entries[0] == sizeof (struct dictentry), "Sanity check failed: clearly I don't know how C works.");
 
+#ifdef MKDICT_THREADSAFE
+#include <threads.h>
+mtx_t      dictmtx = {0};
+once_flag  dictonce = ONCE_FLAG_INIT;
+
+static void dictmtx_destroy(void) { mtx_destroy(&dictmtx); }
+
+static void 
+dictmtx_init(void)
+{
+	if(thrd_success != mtx_init(&dictmtx, mtx_plain)) {
+		fprintf(stderr, "Couldn't initialize dict mutex, dict cannot be use in a threaded context.\n");
+		exit(EXIT_FAILURE);
+	}
+	atexit(dictmtx_destroy);
+}
+
+static void 
+lock(void) {
+	if(thrd_success != mtx_lock(&dictmtx)) {
+		fprintf(stderr, "Couldn't acquire dict mutex.\n");
+		exit(EXIT_FAILURE);
+	}
+}
+
+static void 
+unlock(void) {
+	if(thrd_success != mtx_unlock(&dictmtx)) {
+		fprintf(stderr, "Couldn't release dict mutex.\n");
+		exit(EXIT_FAILURE);
+	}
+}
+#else
+static void lock(void) {};
+static void unlock(void) {};
+#endif
+
+
 int mkdict(void)
 {
+	lock();
 	for (int i = 0; i < MAX_DICTS; i++) {
 		if (!dict_inuse[i]) {
 			dict_inuse[i] = true;
+			unlock();
 			return i;
 		}
 	}
+	unlock();
 	return -1;
 }
 
@@ -275,11 +316,16 @@ helper_dict_free_all_longkeys(int handle)
 
 void rmdict(int handle)
 {
-	if (!handle_check(handle)) return;
+	lock();
+	if (!handle_check(handle)) {
+		unlock();
+		return;
+	}
 	helper_dict_free_all_longkeys(handle);
 	free(dicts[handle].entries);
 	dicts[handle] = (struct dict){};
 	dict_inuse[handle] = false;
+	unlock();
 }
 
 /*
