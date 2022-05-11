@@ -4,7 +4,7 @@
 #include <stdarg.h>
 #include <string.h>
 
-static void _Noreturn
+static _Noreturn void 
 #if defined(__clang__) || defined(__GNUC__)
 __attribute__ ((format (printf, 1, 2)))
 #endif

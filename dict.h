@@ -270,6 +270,7 @@ dictmtx_init(void)
 
 static void 
 lock(void) {
+	call_once(&dictonce, dictmtx_init);
 	if(thrd_success != mtx_lock(&dictmtx)) {
 		fprintf(stderr, "Couldn't acquire dict mutex.\n");
 		exit(EXIT_FAILURE);
