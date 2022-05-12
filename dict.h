@@ -125,9 +125,14 @@ bool CONCAT(dict_get_,ctype)(int handle, const char * key, ctype * val) ;
 TYPELIST(X)
 #undef X
 
+#define X(typesymbol,ctype,varname,_a,_b)  \
+bool CONCAT(dict_getref_,ctype)(int handle, const char * key, ctype ** val) ;
+TYPELIST(X)
+#undef X
+
 
 // returns the key at index i, or NULL if the dict or index doesn't exist;
-const char * dict_at(int handle, int i);
+const char * dict_at(int handle, size_t i);
 
 /*
 	</API>
@@ -141,12 +146,14 @@ const char * dict_at(int handle, int i);
 typedef struct uselesstype {int x;} uselesstype;
 static void DICT_TYPE_NOT_SUPPORTED(uselesstype x){(void)x;abort();}
 
-
 #define MACRO_GENERIC_DICT_SET(_a,ctype,_b,_c,_d) ctype: CONCAT(dict_set_,ctype), 
 #define dict_set(handle, key, val) _Generic((val), TYPELIST(MACRO_GENERIC_DICT_SET) uselesstype: DICT_TYPE_NOT_SUPPORTED)(handle, key,val)
 
 #define MACRO_GENERIC_DICT_GET(_a,ctype,_b,_c,_d) ctype*: CONCAT(dict_get_,ctype), 
 #define dict_get(handle, key, val) _Generic((val), TYPELIST(MACRO_GENERIC_DICT_GET) uselesstype: DICT_TYPE_NOT_SUPPORTED)(handle, key, val)
+
+#define MACRO_GENERIC_DICT_GETREF(_a,ctype,_b,_c,_d) ctype**: CONCAT(dict_getref_,ctype), 
+#define dict_getref(handle, key, val) _Generic((val), TYPELIST(MACRO_GENERIC_DICT_GETREF) uselesstype: DICT_TYPE_NOT_SUPPORTED)(handle, key, val)
 
 /*
 	IMPLEMENTATION  -------------------------------------------------------------------------------
@@ -406,8 +413,28 @@ bool CONCAT(dict_get_,ctype)(int handle, const char * key, ctype * val) \
 TYPELIST(X)
 #undef X
 
+#define X(typesymbol,ctype,varname,_a,_b)  \
+bool CONCAT(dict_getref_,ctype)(int handle, const char * key, ctype ** val) \
+{                                                      \
+	if (!handle_check(handle)) { \
+		if(keyerror_callback)keyerror_callback(key, handle, #typesymbol ); \
+		return false;       \
+	}                                 \
+	struct dictentry * entry = dict_lookup(handle,key);   \
+	if (entry && entry->type == typesymbol) {        \
+		*val = &entry->val.varname;      \
+		return true;		               \
+	}                                              \
+	return false;                                  \
+}
+TYPELIST(X)
+#undef X
+
+
+
+
 const char * 
-dict_at(int handle, int i)
+dict_at(int handle, size_t i)
 {
 	if(!handle_check(handle)) return 0;
 	if(i >= dicts[handle].n_entries) return 0;
