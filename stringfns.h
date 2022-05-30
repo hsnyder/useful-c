@@ -1,13 +1,13 @@
 /* 
 	This "library" is "STB style" (see https://github.com/nothings/stb)
 	Short version: the header includes both the declarations and the implementation.	
-	The implementation is compiled out unless STRING_TRIM_IMPLEMENTATION is defined.
-	So to use this library, you need to define STRING_TRIM_IMPLEMENTATION in ONE .c file
+	The implementation is compiled out unless STRINGFNS_IMPLEMENTATION is defined.
+	So to use this library, you need to define STRINGFNS_IMPLEMENTATION in ONE .c file
 	before you include this header. 
 */
 
-#ifndef STRING_TRIM_H
-#define STRING_TRIM_H
+#ifndef STRINGFNS_H
+#define STRINGFNS_H
 #include <wchar.h>
 
 /*
@@ -20,9 +20,21 @@ wstr_trim_inplace(wchar_t * str);
 void
 str_trim_inplace(char * str);
 
+char *
+skipnl (char *t);
+
+char *
+skipst (char *t);
+
+char * 
+skipwhitespace(char *t);
+
+char * 
+strsepstr(char **string, const char *delim);
+
 #endif
 
-#ifdef STRING_TRIM_IMPLEMENTATION
+#ifdef STRINGFNS_IMPLEMENTATION
 
 #include <wctype.h>
 #include <string.h>
@@ -36,6 +48,7 @@ wstr_trim_inplace(wchar_t * str)
 		Trim leading and trailing whitespace from wide character string, in-place.
 	*/
 	const size_t len = wcslen(str);
+	if(len == 0) return;
 	size_t first = 0;
 	while(first < len && iswspace(str[first])) first++;
 	size_t last = len-1;
@@ -51,6 +64,7 @@ str_trim_inplace(char * str)
 		Trim leading and trailing whitespace from string, in-place.
 	*/
 	const size_t len = strlen(str);
+	if(len == 0) return;
 	size_t first = 0;
 	while(first < len && isspace(str[first])) first++;
 	size_t last = len-1;
@@ -59,8 +73,58 @@ str_trim_inplace(char * str)
 	str[last-first+1] = 0;
 }
 
+char *
+skipnl (char *t)
+{
+        while(*t=='\r' || *t=='\n') t++;
+        return t;
+}
+
+char *
+skipst (char *t)
+{
+        while (*t=='\r' || *t==' ') t++;
+        return t;
+}
+
+char * 
+skipwhitespace(char *t) 
+{
+        while (isspace(*t)) t++;
+        return t;
+}
+
+char * 
+strsepstr(char **string, const char *delim)
+{
+	/*
+		1. Finds the next occurrence of delim in *string.
+		2. Replaces said occurrence with 0s
+		3. Upates *string to point just past the found delim.
+		4. Returns the original value of *string.
+
+		If no occurrences of delim are found, *string will point to the null terminating char after return
+	*/
+
+	const size_t dlen = strlen(delim);
+	char * retval = *string;
+
+	char * x = strstr(*string, delim);
+
+	if(x) {
+		// x points to the first occurrence of delim
+		memset(x, 0, dlen);
+		*string = x + dlen;
+	} else {
+		// no occurrences of delim
+		*string += strlen(*string);
+	}
+	return retval;
+}
+
+
 #endif
-#ifdef STRING_TRIM_SELF_TEST
+#ifdef STRINGFNS_SELF_TEST
 
 int main(void)
 {
