@@ -35,8 +35,9 @@
 
 /*
 	Creates a new cache. A file path must be provided, but it's really just to 
-	determine what drive the cache goes on. The actual path gets unlinked immediately,
-	so it is deleted when the process exits (even if it exits uncleanly).
+	determine what drive the cache goes on. If the argument unlink is set to true,
+	The actual path gets unlinked immediately, so it is deleted when the process 
+	exits (even if it exits uncleanly).
 
 	max_entries is the maximum number of things that can be cached, which must be
 	determined ahead of time.
@@ -46,14 +47,14 @@
 	Returns NULL on error.
 */
 DCACHE_API void * 
-dcache_mk (int max_entries, const char * path, size_t size);
+dcache_new (int max_entries, const char * path, size_t size, int _unlink);
 
 
 /*
 	Deletes an existing cache.
 */
 DCACHE_API void
-dcache_rm (void * cache);
+dcache_destroy (void * cache);
 
 /*
 	Stores a value in the cache. 
@@ -138,36 +139,42 @@ typedef struct {
 	int fd;
 	uint64_t sz;
 	uint64_t off;
+	uint64_t tblsz;
 	cache_entry entries[];
 } disk_cache;
 
 DCACHE_API void * 
-dcache_mk (int max_entries, const char * path, size_t size)
+dcache_new (int max_entries, const char * path, size_t size, int _unlink)
 {
-	const size_t tblsz = sizeof(cache_entry)*max_entries;
+	const size_t tblsz = sizeof(disk_cache) + sizeof(cache_entry)*max_entries;
+
+	if (tblsz > size) {
+		logerror("dcache_new: size is less than required for the header table");
+		return 0;
+	}
 
 	int fd = -1;
 
 	if (-1 == (fd = open(path, O_RDWR|O_CREAT|O_EXCL))) {
-		logerror("dcache_mk: open('%s')", path);
+		logerror("dcache_new: open('%s')", path);
 		return 0;
 	}
 
-	if (-1 == unlink(path)) {
-		logerror("dcache_mk: unlink('%s')", path);
+	if (_unlink && -1 == unlink(path)) {
+		logerror("dcache_new: unlink('%s')", path);
 		close(fd);
 		return 0;
 	}
 
 	if (-1 == ftruncate(fd, size)) {
-		logerror("dcache_mk: ftruncate");
+		logerror("dcache_new: ftruncate");
 		close(fd);
 		return 0;
 	}
 
-	disk_cache *c = calloc(1,sizeof(*c) + tblsz);
+	disk_cache *c = calloc(1,tblsz);
 	if (!c) {
-		logerror("dcache_mk: calloc(%zu)",sizeof(*c) + tblsz);
+		logerror("dcache_new: calloc(%zu)",tblsz);
 		close(fd);
 		return 0;
 	}
@@ -177,16 +184,18 @@ dcache_mk (int max_entries, const char * path, size_t size)
 		.C   = max_entries,
 		.fd  = fd,
 		.sz  = size,
+		.off = tblsz,
+		.tblsz = tblsz,
 	};
 
 	return c;
 }
 
 DCACHE_API void
-dcache_rm (void * cache) 
+dcache_destroy (void * cache) 
 {
 	if (!cache) {
-		logerror("dcache_rm: NULL argument");
+		logerror("dcache_destroy: NULL argument");
 		return;
 	}
 	disk_cache *c = cache;
@@ -246,7 +255,7 @@ dcache_store (void * cache, uint64_t id, const char* key, const void * val, size
 	}
 
 	if (valsz != pwrite(c->fd, val, valsz, c->off)) {
-		logerror("dcache_store: pwrite(%zu bytes)", valsz);
+		logerror("dcache_store: pwrite(value %i, %zu bytes)", c->N, valsz);
 		return 0;
 	}
 
@@ -262,6 +271,11 @@ dcache_store (void * cache, uint64_t id, const char* key, const void * val, size
 
 	c->entries[c->N++] = newent;
 	c->off += valsz;
+
+	if (valsz != pwrite(c->fd, c, c->tblsz, 0)) {
+		logerror("dcache_store: pwrite(table, %zu bytes)", valsz);
+		return 0;
+	}
 
 	return 1;
 }
@@ -309,7 +323,7 @@ typedef struct {
 
 int main(void)
 {
-	void * c = dcache_mk(100, "/tmp/scrap", 1<<25);
+	void * c = dcache_new(100, "/tmp/scrap", 1<<25, 1);
 
 	if (!c) return 0;
 
@@ -342,10 +356,10 @@ int main(void)
 
 	dcache_load(c, 0, "", 0, 0);
 
-	dcache_rm(c);
+	dcache_destroy(c);
 
 
-	c = dcache_mk(100, "/asdf/scrap", 1<<25);
+	c = dcache_new(100, "/asdf/scrap", 1<<25, 0);
 
 }
 
