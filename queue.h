@@ -151,7 +151,7 @@ int producer (void * nothing) {
 		printf("Thread %lu generating %f at slot %u\n", tid, f, u);
 		entries[u] = f;
 		queue_commit_put(&q);
-		usleep(randu(&_r) % 10000000);
+		usleep(randu(&_r) % 1000000);
 
 	}
 
@@ -170,7 +170,7 @@ int consumer (void * nothing) {
 		unsigned u = queue_begin_get(&q);
 		printf("Thread %lu got %f at slot %u\n", tid, entries[u], u);
 		queue_commit_get(&q);
-		usleep(randu(&_r) % 10000000);
+		usleep(randu(&_r) % 1000000);
 
 	}
 
@@ -185,7 +185,7 @@ int main (void) {
 	unsigned long ls[6];
 
 	for (int i = 0; i < 6; i++) {
-		ls[i] = i;
+		ls[i] = 1000+i;
 		thrd_create(ts+i, i < 2 ? producer : consumer, ls+i);
 	}
 
