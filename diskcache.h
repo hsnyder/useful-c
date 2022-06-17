@@ -21,12 +21,8 @@
 	Error handling: 
 	Errors are indicated through return codes. By default, error messages are also
 	logged to stderr. If you want to provide a custom logging function, 
-	define DCACHE_CUSTOM_LOGERROR and provide a printf-like function called 
-	with signature logerror(fmt,...) before including this file, in the same place 
-	you define DCACHE_IMPLEMENTATION. If you simply want to change what FILE* stream 
-	the messages get printed to, you can define DCACHE_ERRORSTREAM instead.
-
-
+	define DCACHE_ERR(str) to some function that accepts a const char * argument.
+	The default value is #define DCACHE_ERR(str) fputs(str, stderr)
 
 */
 
@@ -95,27 +91,37 @@ dcache_load (void * cache, uint64_t id, const char* key, void * val, size_t vals
 #include <stdarg.h>
 #include <errno.h>
 
-#ifndef DCACHE_ERRORSTREAM
-#define DCACHE_ERRORSTREAM stderr
+
+#ifndef DCACHE_ERR 
+#define DCACHE_ERR(str) fputs(str, stderr)
 #endif
 
-#ifndef DCACHE_CUSTOM_LOGERROR
 static void 
 #if defined(__clang__) || defined(__GNUC__)
 __attribute__ ((format (printf, 1, 2)))
 #endif
 logerror (char *fmt, ...)
 {
+	char msg[1024] = {};
+	size_t max = sizeof(msg)-1;
+
 	int e = errno;
 	va_list args;
 	va_start(args, fmt);
-	vfprintf(DCACHE_ERRORSTREAM, fmt, args);
+	size_t nw = vsnprintf(msg,max,fmt, args);
 	va_end(args);
-	if (e!= 0) fprintf(DCACHE_ERRORSTREAM, " (errno %d: %s)", e, strerror(e));
-	fputc('\n', DCACHE_ERRORSTREAM);
+
+	if (e!= 0 && nw < max) {
+		nw += snprintf(msg+nw, max-nw, " (errno %d: %s)", e, strerror(e));
+	}
+
+	if (nw < max) {
+		msg[nw] = '\n';
+	}
+
+	DCACHE_ERR(msg);
 }
 
-#endif
 
 typedef struct {
 
@@ -337,6 +343,9 @@ int main(void)
 	dcache_load(c, 0, "", 0, 0);
 
 	dcache_rm(c);
+
+
+	c = dcache_mk(100, "/asdf/scrap", 1<<25);
 
 }
 
