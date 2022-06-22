@@ -6,19 +6,30 @@
 #include <stdarg.h>
 #include <string.h>
 
+#ifndef DIE_H_OUTPUT_MESSAGE
+#define DIE_H_OUTPUT_MESSAGE(m) fputs(m,stderr)
+#endif
+
 static _Noreturn void 
 #if defined(__clang__) || defined(__GNUC__)
 __attribute__ ((format (printf, 1, 2)))
 #endif
 die(char *fmt, ...)
 {
+	char buf[1024]  = {};
+	char buf2[128]  = {};
+	char buf3[1024] = {};
+
 	int e = errno;
+	if (e != 0) snprintf(buf2,sizeof(buf2)," (errno %d: %s)", e, strerror(e));
+
 	va_list args;
 	va_start(args, fmt);
-	vfprintf(stderr, fmt, args);
+	vsnprintf(buf, sizeof(buf), fmt, args);
 	va_end(args);
-	if (e!= 0) fprintf(stderr, " (errno %d: %s)", e, strerror(e));
-	fputc('\n', stderr);
+
+	snprintf(buf3, sizeof(buf3), "%s%s\n", buf, buf2);
+	DIE_H_OUTPUT_MESSAGE(buf3);
 	exit(EXIT_FAILURE);
 }
 
@@ -27,22 +38,6 @@ die(char *fmt, ...)
 #else
 #define xassert(cond) if(!(cond)){ die("Assertion failed %s:%i %s", __FILE__, __LINE__, #cond); }
 #endif
-
-static void 
-#if defined(__clang__) || defined(__GNUC__)
-__attribute__ ((format (printf, 1, 2)))
-#endif
-warn(char *fmt, ...)
-{
-	int e = errno;
-	va_list args;
-	va_start(args, fmt);
-	vfprintf(stderr, fmt, args);
-	va_end(args);
-	if (e!= 0) fprintf(stderr, " (errno %d: %s)", e, strerror(e));
-	fputc('\n', stderr);
-	fflush(stderr);
-}
 
 static inline char *
 #if defined(__clang__) || defined (__GNUC__)
