@@ -1,5 +1,8 @@
 /*
-	Allocator for fixed size memory chunks.
+	A Fixed-size memory allocator.
+	It is fixed-size in two senses. Both the chunks of memory it manages,
+	and the size of the overall heap are fixed.
+
 	Not thread safe, but you can have one allocator per thread.
 
 	Limitations:
