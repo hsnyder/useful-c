@@ -19,6 +19,7 @@
 	define DCACHE_IMPLEMENTATION in one .c file, before you include this header. 
 
 	Error handling: 
+
 	Errors are indicated through return codes. By default, error messages are also
 	logged to stderr. If you want to provide a custom logging function, 
 	define DCACHE_ERR(str) to some function that accepts a const char * argument.
@@ -86,7 +87,10 @@ dcache_load (void * cache, uint64_t id, const char* key, void * val, size_t vals
 
 #include <unistd.h>
 #include <fcntl.h>
+#include <sys/stat.h>
+
 #include <stdio.h>
+#include <inttypes.h>
 #include <string.h>
 #include <stdlib.h>
 #include <stdarg.h>
@@ -147,6 +151,7 @@ DCACHE_API void *
 dcache_new (int max_entries, const char * path, size_t size, int _unlink)
 {
 	const size_t tblsz = sizeof(disk_cache) + sizeof(cache_entry)*max_entries;
+	errno = 0;
 
 	if (tblsz > size) {
 		logerror("dcache_new: size is less than required for the header table");
@@ -155,7 +160,7 @@ dcache_new (int max_entries, const char * path, size_t size, int _unlink)
 
 	int fd = -1;
 
-	if (-1 == (fd = open(path, O_RDWR|O_CREAT|O_EXCL))) {
+	if (-1 == (fd = open(path, O_RDWR|O_CREAT|O_EXCL, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH))) {
 		logerror("dcache_new: open('%s')", path);
 		return 0;
 	}
@@ -208,6 +213,7 @@ static cache_entry *
 lookup(disk_cache * c, uint64_t id, const char * key) 
 {
 	cache_entry * e = 0;
+	errno = 0;
 	
 	for (int i = 0; i < c->N; i++) {
 
@@ -226,16 +232,18 @@ lookup(disk_cache * c, uint64_t id, const char * key)
 DCACHE_API int 
 dcache_store (void * cache, uint64_t id, const char* key, const void * val, size_t valsz)
 {
+	const unsigned char * ucval = val;
 
 	disk_cache *c = cache;
+	errno = 0;
 
 	if (!c) {
 		logerror("dcache_store: NULL argument");
 		return 0;
 	}
 
-	if (strlen(val) +1 >= sizeof(c->entries[0].name)) {
-		logerror("dcache_store: key too long");
+	if (strlen(key) +1 >= sizeof(c->entries[0].name)) {
+		logerror("dcache_store: key too long '%s'", key);
 		return 0;
 	}
 	
@@ -254,9 +262,19 @@ dcache_store (void * cache, uint64_t id, const char* key, const void * val, size
 		return 0;
 	}
 
-	if (valsz != pwrite(c->fd, val, valsz, c->off)) {
-		logerror("dcache_store: pwrite(value %i, %zu bytes)", c->N, valsz);
+	if (-1 == lseek(c->fd, c->off, SEEK_SET)) {
+		logerror("dcache_store: lseek(%zu)", c->off);
 		return 0;
+	}
+
+	size_t nwritten = 0;
+	while (nwritten < valsz) {
+		ssize_t rc = write(c->fd, ucval+nwritten, valsz-nwritten);
+		if (rc == -1) {
+			logerror("dcache_store: write(seq %i, id %"PRIu64 ", key %s, sz %zu) completed %zu bytes", c->N, id, key, valsz, nwritten);
+			return 0;
+		}
+		nwritten += rc;
 	}
 
 	cache_entry newent = {
@@ -272,8 +290,8 @@ dcache_store (void * cache, uint64_t id, const char* key, const void * val, size
 	c->entries[c->N++] = newent;
 	c->off += valsz;
 
-	if (valsz != pwrite(c->fd, c, c->tblsz, 0)) {
-		logerror("dcache_store: pwrite(table, %zu bytes)", valsz);
+	if (c->tblsz != pwrite(c->fd, c, c->tblsz, 0)) {
+		logerror("dcache_store: pwrite(table, %zu bytes)", c->tblsz);
 		return 0;
 	}
 
@@ -284,6 +302,7 @@ DCACHE_API size_t
 dcache_load (void * cache, uint64_t id, const char* key, void * val, size_t valsz) 
 {
 	disk_cache *c = cache;
+	errno = 0;
 
 	if (!c) {
 		logerror("dcache_load: NULL argument");
