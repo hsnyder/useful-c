@@ -30,7 +30,11 @@ die(char *fmt, ...)
 
 	snprintf(buf3, sizeof(buf3), "%s%s\n", buf, buf2);
 	DIE_H_OUTPUT_MESSAGE(buf3);
+#ifdef DIE_ABORT
+	abort();
+#else 
 	exit(EXIT_FAILURE);
+#endif
 }
 
 #ifdef NDEBUG

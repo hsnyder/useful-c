@@ -20,30 +20,23 @@ evqueue_free(void *queue);
 
 #ifdef EVQUEUE_IMPLEMENTATION
 
-#include <threads.h>
-
-#define FSALLOC_IMPLEMENTATION
-#include "fsalloc.h"
+#include <pthread.h>
+#include <stddef.h>
+#include <time.h>
 #include "die.h"
 
-#include <stddef.h>
-
-typedef struct {
-	int       evtype;
-	unsigned  next_idx;
-} evlist_t;
-
 typedef struct {
 
-	mtx_t    m;
-	cnd_t    c;
+	pthread_mutex_t    m;
+	pthread_cond_t     c;
 
-	fs_allocator  alloc_events;
-	fs_allocator  alloc_evlist;
+	size_t   itemsize;
+	size_t   maxitems;
+	size_t   sz_typelist;
+	size_t   sz_events;
 
 	unsigned nevents;
-	unsigned evlist_head;
-	evlist_t data[];
+	int      data[];
 
 } evqueue_t;
 
@@ -52,33 +45,31 @@ EVQUEUE_API void*
 evqueue (unsigned maxitems, unsigned itemsize)
 {
 
-	const size_t sz_evlist = sizeof(evlist_t) * maxitems;
-	const size_t sz_events = (size_t)itemsize * (size_t)maxitems;
+	const size_t sz_typelist = sizeof(int) * maxitems;
+	const size_t sz_events   = (size_t)itemsize * (size_t)maxitems;
 
-	evqueue_t *q = malloc(sizeof(*q) + sz_evlist + sz_events);
+	evqueue_t *q = malloc(sizeof(*q) + sz_typelist + sz_events);
 	if (!q) return 0;
 
 	*q = (evqueue_t) { 
-
-		.alloc_events = { 
-			.itemsize = itemsize,
-			.maxitems = maxitems,
-			.heap     = ((unsigned char*)q->data) + sz_evlist,
-		}, 
-		.alloc_evlist = {
-			.itemsize = sizeof(evlist_t),
-			.maxitems = maxitems,
-			.heap     = q->data,
-		}
+		.itemsize    = itemsize,
+		.maxitems    = maxitems,
+		.sz_typelist = sz_typelist,
+		.sz_events   = sz_events,
 	};
 
-	xassert(thrd_success == mtx_init(&q->m, mtx_timed));	
-	xassert(thrd_success == cnd_init(&q->c));	
+	pthread_mutexattr_t a;
+	xassert(0 == pthread_mutexattr_init(&a));
+	xassert(0 == pthread_mutexattr_settype(&a, PTHREAD_MUTEX_ERRORCHECK));
+	xassert(0 == pthread_mutex_init(&q->m, &a));
+
+	pthread_condattr_t b;
+	xassert(0 == pthread_condattr_init(&b));
+	xassert(0 == pthread_cond_init(&q->c, &b));	
 
 	return q;
 }
 
-#include <time.h>
 
 static struct timespec
 get_deadline(int timeout_ms)
@@ -87,7 +78,7 @@ get_deadline(int timeout_ms)
 	xassert(TIME_UTC == timespec_get(&deadline, TIME_UTC));
 	if (timeout_ms > 0) {
 		size_t ns = deadline.tv_nsec + (size_t)timeout_ms * (size_t)1000000;
-		while (ns   > 1000000000) {
+		while (ns  >= 1000000000) {
 			deadline.tv_sec++;
 			ns -= 1000000000;
 		}
@@ -106,80 +97,57 @@ evqueue_putevents(void *queue, unsigned n, void *evs, int *types, int timeout_ms
 
 	struct timespec deadline = get_deadline(timeout_ms);
 
-	const size_t maxitems  = q->alloc_events.maxitems;
-	const size_t evsz      = q->alloc_events.itemsize;
-	const size_t sz_evlist = sizeof(evlist_t) * maxitems;
-	unsigned char * input_events = evs;
+	unsigned char * input_events  = evs;
+	unsigned char * event_storage = ((unsigned char *)q->data) + q->sz_typelist;
 
 	unsigned nwritten = 0;
 
 	// try to acquire the lock. 
 	if (timeout_ms < 0) {
 		// infinite wait
-		xassert(thrd_success == mtx_lock(&q->m));
+		int rc = pthread_mutex_lock(&q->m);
+		xassert(0 == rc);
 
-		while (q->nevents == maxitems) 
-			xassert(thrd_success == cnd_wait(&q->c, &q->m));
+		while (q->nevents == q->maxitems) 
+			xassert(0 == pthread_cond_wait(&q->c, &q->m));
 
 	} else if (timeout_ms == 0) {
 		// do not wait
-		int rc = mtx_trylock(&q->m);
-		xassert(rc != thrd_error);
-		if (rc == thrd_busy) return 0;
+		int rc = pthread_mutex_trylock(&q->m);
+		xassert(rc == 0 || rc == EBUSY);
+		if (rc == EBUSY) return 0;
 
 	} else {
 		// specified wait time
-		int rc = mtx_timedlock(&q->m, &deadline);
-		xassert(rc == thrd_success || rc == thrd_timedout);
-		if (rc == thrd_timedout) return 0;
+		int rc = pthread_mutex_timedlock(&q->m, &deadline);
+		xassert(rc == 0 || rc == ETIMEDOUT);
+		if (rc == ETIMEDOUT) return 0;
 
-		while (q->nevents == maxitems) {
-			int rc = cnd_timedwait(&q->c, &q->m, &deadline);
-			xassert(rc == thrd_success || rc == thrd_timedout);
-			if (rc == thrd_timedout) {
-				xassert(thrd_success == mtx_unlock(&q->m));
+		while (q->nevents == q->maxitems) {
+			int rc = pthread_cond_timedwait(&q->c, &q->m, &deadline);
+			xassert(rc == 0 || rc == ETIMEDOUT);
+			if (rc == ETIMEDOUT) {
+				xassert(0 == pthread_mutex_unlock(&q->m));
 				return 0;
 			}
 		}
 	}
 
-	unsigned evlist_tail = q->evlist_head;
-	for (unsigned i = 0; i < q->nevents; i++) 
-		evlist_tail = q->data[evlist_tail].next_idx;
+	while (nwritten < n && q->nevents < q->maxitems) {
 
-	while (nwritten < n && q->nevents < maxitems) {
+		q->data[q->nevents] = types[nwritten];
 
-		unsigned char * new_event  = fs_alloc(&q->alloc_events);
-		evlist_t *      new_evlist = fs_alloc(&q->alloc_evlist);
+		unsigned char * dst = event_storage + q->nevents * q->itemsize;
+		unsigned char * src = input_events  +   nwritten * q->itemsize;
+		memcpy(dst,src,q->itemsize);
 
-		xassert(new_event);
-		xassert(new_evlist);
-
-		ptrdiff_t off = new_evlist - q->data;
-		xassert(off >= 0);
-		xassert(off < sz_evlist);
-
-		unsigned newidx = off/sizeof(*new_evlist);
-
-		if (q->nevents == 0) 
-			q->evlist_head = newidx;
-		else
-			q->data[evlist_tail].next_idx = newidx;
-
-		*new_evlist = (evlist_t) {
-			.evtype = types[nwritten],
-		};
-
-		memcpy (new_event, input_events + evsz*nwritten, evsz);
-
-		evlist_tail = newidx;
 		nwritten++;
 		q->nevents++;
 	}
 
-	xassert(thrd_success == mtx_unlock(&q->m));
+	xassert(0 == pthread_mutex_unlock(&q->m));
 	if (nwritten > 0) 
-		xassert(thrd_success == cnd_broadcast(&q->c));
+		xassert(0 == pthread_cond_broadcast(&q->c));
 	return nwritten;
 
 
@@ -193,81 +161,70 @@ evqueue_getevents(void *queue, unsigned n, void *evs, int *types, unsigned nfilt
 
 	struct timespec deadline = get_deadline(timeout_ms);
 
-	const size_t maxitems  = q->alloc_events.maxitems;
-	const size_t evsz      = q->alloc_events.itemsize;
-	const size_t sz_evlist = sizeof(evlist_t) * maxitems;
-	unsigned char * input_events = evs;
 
 	unsigned char * output_events = evs;
-	unsigned char * stored_events = ((unsigned char *) q->data) + sz_evlist;
+	unsigned char * event_storage = ((unsigned char *)q->data) + q->sz_typelist;
 
 	unsigned ngot = 0;
 
 	// try to acquire the lock. 
 	if (timeout_ms < 0) {
 		// infinite wait
-		xassert(thrd_success == mtx_lock(&q->m));
+		int rc = pthread_mutex_lock(&q->m);
+		xassert(0 == rc);
 
 		while (!q->nevents) 
-			xassert(thrd_success == cnd_wait(&q->c, &q->m));
+			xassert(0 == pthread_cond_wait(&q->c, &q->m));
 
 	} else if (timeout_ms == 0) {
 		// do not wait
-		int rc = mtx_trylock(&q->m);
-		xassert(rc != thrd_error);
-		if (rc == thrd_busy) return 0;
+		int rc = pthread_mutex_trylock(&q->m);
+		xassert(rc == 0 || rc == EBUSY);
+		if (rc == EBUSY) return 0;
 
 	} else {
 		// specified wait time
-		int rc = mtx_timedlock(&q->m, &deadline);
-		xassert(rc == thrd_success || rc == thrd_timedout);
-		if (rc == thrd_timedout) return 0;
+		int rc = pthread_mutex_timedlock(&q->m, &deadline);
+		xassert(rc == 0 || rc == ETIMEDOUT);
+		if (rc == ETIMEDOUT) return 0;
 
 		while (!q->nevents) {
-			int rc = cnd_timedwait(&q->c, &q->m, &deadline);
-			xassert(rc == thrd_success || rc == thrd_timedout);
-			if (rc == thrd_timedout) {
-				xassert(thrd_success == mtx_unlock(&q->m));
+			int rc = pthread_cond_timedwait(&q->c, &q->m, &deadline);
+			xassert(rc == 0 || rc == ETIMEDOUT);
+			if (rc == ETIMEDOUT) {
+				xassert(0 == pthread_mutex_unlock(&q->m));
 				return 0;
 			}
 		}
 	}
 
-	unsigned nextev = q->evlist_head;
-	long long prevev = -1;
 
-	unsigned ntried = 0;
-	while (ngot < n && ngot < q->nevents && ntried++ < q->nevents) {
-		unsigned i = 0;
-		for (; i < nfilters; i++) {
-			if (q->data[nextev].evtype == filters[i]) {
-				memcpy(output_events + ngot*evsz, stored_events + nextev*evsz, evsz);
-				types[ngot] = filters[i];
+	for (unsigned i = 0; i < q->nevents && ngot < n; i++) {
+		for (unsigned f = 0; f < nfilters; f++) {
+			if (q->data[f] == filters[f]) {
+
+				unsigned char * ourcopy   = event_storage +    i * q->itemsize;
+				unsigned char * theircopy = output_events + ngot * q->itemsize;
+
+				types[ngot] = filters[f];
+				memcpy(theircopy, ourcopy, q->itemsize);
+
+				// compress lists
+				memmove(&q->data[i], &q->data[i+1], (q->maxitems-i) * sizeof(q->data[0]));
+				memmove(ourcopy, ourcopy+q->itemsize, (q->maxitems-i) * q->itemsize);
+
+				ngot++;
+				q->nevents--;
+				i--; // since we're decrementing q->nevents
 				break;
 			}
 		}
-
-		if (i == nfilters) {
-			prevev = nextev;
-			nextev = q->data[nextev].next_idx;
-		} else {
-			if (prevev == -1) 
-				q->evlist_head = q->data[nextev].next_idx;
-			else 
-				q->data[prevev].next_idx = q->data[nextev].next_idx;
-
-			fs_free(&q->alloc_evlist, &q->data[nextev]);
-			fs_free(&q->alloc_events, stored_events + nextev*evsz);
-			ngot++;
-			q->nevents--;
-		}
 	}
 
-	xassert(thrd_success == mtx_unlock(&q->m));
-
+	xassert(0 == pthread_mutex_unlock(&q->m));
 	if (ngot > 0) 
-		xassert(thrd_success == cnd_broadcast(&q->c));
-	
+		xassert(0 == pthread_cond_broadcast(&q->c));
+
 	return ngot;
 }
 
@@ -276,8 +233,8 @@ evqueue_free(void *queue)
 {
 	evqueue_t * q = queue;
 	xassert(q);
-	mtx_destroy(&q->m);	
-	cnd_destroy(&q->c);	
+	xassert(0 == pthread_mutex_destroy(&q->m));
+	xassert(0 == pthread_cond_destroy(&q->c));
 	free(q);
 }
 
